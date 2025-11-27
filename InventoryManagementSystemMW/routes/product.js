@@ -301,7 +301,90 @@ router.get('/get-product-by-id', async function (req, res) {
     }
 });
 
+router.get('/get-variant-by-id', async function (req, res) {
+    try {
+        const fetchall = await ProductVairant.findAll({
+            where: {
+                variant_id: req.query.id
+            }
+        });
+        res.json(fetchall[0]);
+        console.log('triggered /get-product-by-id')
 
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+
+router.post('/add-cart', async function (req, res) {
+    try {
+
+        const {
+            product_id,
+            variant_id,
+            attachment,
+            variant,
+            quantity,
+            product_name,
+            product_price,
+            created_by
+        } = req.body;
+
+        await knex('product_cart').insert({
+            product_id,
+            variant_id,
+            attachment,
+            variant,
+            quantity,
+            product_name,
+            product_price,
+            created_by
+        })
+        res.status(200).json({ message: "Added to cart successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+router.get('/get-all-cart', async function (req, res) {
+    try {
+        const getCarts = await knex('product_cart').select('*');
+        res.json(getCarts)
+    } catch (err) {
+        console.log('INternal error: ', err)
+    }
+})
+
+router.post('/update-cart', async function (req, res) {
+    console.log(' triggered /update-cart ')
+    try {
+        const { product_cart_id, quantity, updated_by } = req.body;
+
+        await knex('product_cart').where({ product_cart_id: product_cart_id }).update({
+            quantity: quantity,
+            updated_by: updated_by,
+            updated_at: new Date()
+        });
+        res.status(200).json({ message: "Cart was updated" });
+
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+router.post('/remove-from-cart', async function (req, res) {
+    console.log('triggered /remove-cart');
+    try {
+        const { product_cart_id } = req.body;
+
+        await knex('product_cart').where({ product_cart_id: product_cart_id }).del();
+
+        res.status(200).json({ message: 'Product was removed from the cart' })
+    } catch (err) {
+        console.log('Internal Error: ', err)
+    }
+})
 
 
 

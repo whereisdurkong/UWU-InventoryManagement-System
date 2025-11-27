@@ -6,6 +6,7 @@ import { Table, Badge, Image } from 'react-bootstrap';
 import MainCard from 'components/MainCard';
 import BTN from '../../components/reactBits/BTN';
 import { useNavigate } from 'react-router-dom';
+
 export default function ProductTable() {
     const [products, setProducts] = useState([]);
     const [productVariants, setProductVariants] = useState([]);
@@ -40,11 +41,18 @@ export default function ProductTable() {
         fetchData();
     }, []);
 
-    // Function to check if a product has variants (fixed for type mismatch)
+    // Function to check if a product has variants (returns boolean)
     const hasVariants = (productId) => {
         return productVariants.some(variant =>
             variant.product_id.toString() === productId.toString()
         );
+    };
+
+    // Function to count how many variants a product has
+    const countVariants = (productId) => {
+        return productVariants.filter(variant =>
+            variant.product_id.toString() === productId.toString()
+        ).length;
     };
 
     // Function to construct the full image URL
@@ -106,7 +114,8 @@ export default function ProductTable() {
                     {products.length > 0 ? (
                         products.map((product) => {
                             const imageUrl = getImageUrl(product.attachment);
-                            const productHasVariants = hasVariants(product.product_id);
+                            const variantCount = countVariants(product.product_id);
+                            const productHasVariants = variantCount >= 2;
 
                             return (
                                 <tr key={product.product_id} onClick={() => handleView(product)}>
@@ -180,7 +189,7 @@ export default function ProductTable() {
                                     <td>
                                         {productHasVariants ? (
                                             <Badge bg="info" className="me-1">
-                                                Has Variants
+                                                Has Variants ({variantCount})
                                             </Badge>
                                         ) : (
                                             <Badge bg="light" text="dark">

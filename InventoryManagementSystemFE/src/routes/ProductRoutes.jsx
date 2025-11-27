@@ -5,6 +5,7 @@ import DashboardLayout from 'layout/Dashboard';
 import Loadable from 'components/Loadable';
 import ProductTable from '../views/products/productTable';
 import ViewProduct from '../views/products/viewProduct';
+import EditProduct from '../views/products/editProduct';
 
 // render - add products page
 const AddProduct = Loadable(lazy(() => import('views/products/addProducts')));
@@ -43,6 +44,10 @@ const ProductRoutes = {
                 {
                     path: 'product-view',
                     element: <ViewProduct />
+                },
+                {
+                    path: 'edit-product',
+                    element: <EditProduct />
                 }
             ]
 
