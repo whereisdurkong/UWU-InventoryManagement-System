@@ -3,6 +3,9 @@ import axios from 'axios';
 import config from 'config';
 import BTN from "../../components/reactBits/BTN";
 import { useNavigate } from 'react-router';
+import ModalCard from "../../components/ModalCard";
+import SessionAlert from "../../components/SessionAlert";
+import LoadingSpinner from "../../routes/Spinner";
 
 export default function ViewProduct() {
     const empInfo = JSON.parse(localStorage.getItem('user'));
@@ -26,6 +29,14 @@ export default function ViewProduct() {
     const [editingVariants, setEditingVariants] = useState([]);
     const [isEditingVariants, setIsEditingVariants] = useState(false);
     const [isSavingVariants, setIsSavingVariants] = useState(false);
+
+    const [modalState, setModalState] = useState(false);
+    const [modalCntnt, setModalCntnt] = useState('')
+
+    const [success, setSuccess] = useState('');
+    const [error, setError] = useState('')
+
+    const [isLoading, setIsLoading] = useState(false);
 
     const product_id = new URLSearchParams(window.location.search).get('id');
 
@@ -121,6 +132,7 @@ export default function ViewProduct() {
         navigate(`/products/edit-product?${params.toString()}`)
     };
 
+
     const handleCancelEdit = () => {
         setIsEditing(false);
         setEditedData(productData);
@@ -136,11 +148,11 @@ export default function ViewProduct() {
 
             setProductData(editedData);
             setIsEditing(false);
-            alert('Product updated successfully!');
+            setSuccess('Product updated successfully!');
             console.log('Product updated:', response.data);
         } catch (err) {
             console.log('Unable to update product: ', err);
-            alert('Error updating product');
+            setError('Error updating product');
         } finally {
             setIsSaving(false);
         }
@@ -181,11 +193,11 @@ export default function ViewProduct() {
 
             setVariants([...editingVariants]);
             setIsEditingVariants(false);
-            alert('Variants updated successfully!');
+            setSuccess('Variants updated successfully!');
             console.log('Variants updated');
         } catch (err) {
             console.log('Unable to update variants: ', err);
-            alert('Error updating variants');
+            setError('Error updating variants');
         } finally {
             setIsSavingVariants(false);
         }
@@ -203,6 +215,11 @@ export default function ViewProduct() {
     };
 
     const handleVariantCheckboxChange = (variant) => {
+        // Check if variant is out of stock
+        if (parseInt(variant.quantity_in_stock) === 0) {
+            return; // Don't allow selection
+        }
+
         if (selectedVariant?.variant_id === variant.variant_id) {
             setSelectedVariant(null);
             setSelectedSize(null);
@@ -223,11 +240,9 @@ export default function ViewProduct() {
         return `${config.baseApi}/${attachmentPath}`;
     };
 
-    const [selectedVariantCartStore, setSelectedVariantCartStore] = useState('')
-
     const handleAddToCart = async () => {
         if (!productData || !selectedVariant) {
-            alert('No item was selected')
+            setError('No item was selected')
             return;
         }
 
@@ -244,13 +259,6 @@ export default function ViewProduct() {
                 variantValue = `${selectedVariant.color}/${selectedVariant.size}`;
             }
 
-            setSelectedVariantCartStore(variantValue);
-
-            const allC = await axios.get(`${config.baseApi}/product/get-all-cart`)
-            const allCartData = allC.data;
-
-            const ownCart = allCartData.filter(ac => ac.created_by === empInfo.user_name && ac.product_name === productData.product_name);
-
             const fetchcart = await axios.get(`${config.baseApi}/product/get-all-cart`);
             const allcartdata = fetchcart.data;
 
@@ -264,13 +272,18 @@ export default function ViewProduct() {
 
             if (existingCartItem) {
                 const newQuantity = parseInt(existingCartItem.quantity) + parseInt(quantity);
+                setIsLoading(true)
                 await axios.post(`${config.baseApi}/product/update-cart`, {
                     product_cart_id: existingCartItem.product_cart_id,
                     variant_id: selectedVariant.variant_id,
                     quantity: newQuantity
                 });
-                alert('Item quantity updated in cart!');
+                setSuccess('Item quantity updated in cart!');
+                setTimeout(() => {
+                    window.location.reload()
+                }, 1000);
             } else {
+                setIsLoading(true)
                 await axios.post(`${config.baseApi}/product/add-cart`, {
                     product_id: String(productData.product_id),
                     variant_id: String(selectedVariant.variant_id),
@@ -281,20 +294,55 @@ export default function ViewProduct() {
                     product_name: productData.product_name,
                     created_by: empInfo.user_name
                 });
-                alert('Item added to cart successfully!');
+                setSuccess('Item added to cart successfully!');
+
+                setTimeout(() => {
+                    window.location.reload()
+                }, 1000);
             }
         } catch (err) {
             console.log('Unable to add product to the cart: ', err)
         }
     };
 
-    const handleBuyNow = () => {
+    const handlewithdraw = () => {
+        setModalState(true)
+        setModalCntnt('Are you sure you want to withdraw?');
+
+
+    }
+
+    const handleBuyNow = async () => {
         if (!productData || !selectedVariant) return;
         console.log('Buy now:', {
             product: productData.product_name,
             variant: selectedVariant,
             quantity: quantity
         });
+
+        const updatedData = await axios.get(`${config.baseApi}/product/get-variant-by-id`, {
+            params: { id: selectedVariant.variant_id }
+        });
+        const variantData = updatedData.data
+
+        if (variantData.quantity_in_stock === '0') {
+            setError('Out of stocks!')
+            return;
+        }
+        setIsLoading(true)
+        await axios.post(`${config.baseApi}/product/withdraw-product`, {
+            product_id,
+            variant_id: selectedVariant.variant_id,
+            quantity: quantity,
+            created_by: empInfo.user_name
+        })
+
+        setSuccess('Withdraw successfully');
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+
+
     };
 
     if (!productData) {
@@ -317,15 +365,45 @@ export default function ViewProduct() {
             padding: '16px',
             boxSizing: 'border-box'
         }}>
+            {isLoading &&
+                <LoadingSpinner text="Fetching product details..." />
+            }
+            <ModalCard
+                show={modalState}
+                onClose={() => setModalState(false)}
+                onConfirm={() => {
+
+                    setModalState(false);
+
+                    handleBuyNow()
+                }}
+                message={modalCntnt}
+            />
+
+            {success && (
+                <SessionAlert
+                    type="success"
+                    title='Successful'
+                    message={success}
+                    onClose={() => setSuccess('')}
+                />
+            )}
+
+            {error && (
+                <SessionAlert
+                    type="error"
+                    title='Error'
+                    message={error}
+                    onClose={() => setError('')}
+                />
+
+            )}
+
             {/* Main Product Container */}
             <div style={{
                 display: 'flex',
                 gap: '32px',
                 flexDirection: 'row',
-                '@media (max-width: 768px)': {
-                    flexDirection: 'column',
-                    gap: '24px'
-                }
             }}>
                 {/* Product Image Section */}
                 <div style={{
@@ -366,6 +444,7 @@ export default function ViewProduct() {
                                 display: 'grid',
                                 gap: '8px'
                             }}>
+                                <div><b>About details: </b></div>
                                 <div><strong>Created by:</strong> {productData.created_by}</div>
                                 <div><strong>Created at:</strong> {new Date(productData.created_at).toLocaleDateString()}</div>
                                 <div><strong>Status:</strong> {productData.is_active ? 'Active' : 'Inactive'}</div>
@@ -464,14 +543,19 @@ export default function ViewProduct() {
                                             cursor: 'pointer',
                                             flexShrink: 0
                                         }}
+                                        title="Edit"
                                         onClick={handleEditClick}
                                     ></i>
-                                    <i className="ph ph-trash" style={{
-                                        fontSize: '1.5rem',
-                                        color: '#ff0000ff',
-                                        cursor: 'pointer',
-                                        flexShrink: 0
-                                    }}></i>
+                                    {/* <i className="ph ph-trash"
+                                        title="Delete"
+                                        style={{
+                                            fontSize: '1.5rem',
+                                            color: '#ff0000ff',
+                                            cursor: 'pointer',
+                                            flexShrink: 0
+                                        }}
+                                        onClick={handleDeleteClick}
+                                    ></i> */}
                                 </>
                             )}
                         </div>
@@ -581,6 +665,7 @@ export default function ViewProduct() {
                     </div>
 
                     {/* Variant Selection with Checkboxes */}
+                    {/* Variant Selection with Checkboxes */}
                     {variants.length > 0 && (
                         <div style={{ marginBottom: '24px' }}>
                             <div style={{
@@ -596,221 +681,195 @@ export default function ViewProduct() {
                                 }}>
                                     Available Variants
                                 </h3>
-
-                                {!isEditingVariants ? (
-                                    <button
-                                        onClick={handleEditVariantsClick}
-                                        style={{
-                                            padding: '6px 12px',
-                                            border: '1px solid #007c34ff',
-                                            borderRadius: '4px',
-                                            backgroundColor: 'white',
-                                            color: '#007c34ff',
-                                            cursor: 'pointer',
-                                            fontSize: '12px',
-                                            fontWeight: '500'
-                                        }}
-                                    >
-                                        Edit Stocks & Prices
-                                    </button>
-                                ) : (
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button
-                                            onClick={handleSaveVariants}
-                                            disabled={isSavingVariants}
-                                            style={{
-                                                padding: '6px 12px',
-                                                border: 'none',
-                                                borderRadius: '4px',
-                                                backgroundColor: '#007c34ff',
-                                                color: 'white',
-                                                cursor: isSavingVariants ? 'not-allowed' : 'pointer',
-                                                fontSize: '12px',
-                                                fontWeight: '500',
-                                                opacity: isSavingVariants ? 0.6 : 1
-                                            }}
-                                        >
-                                            {isSavingVariants ? 'Saving...' : 'Save All'}
-                                        </button>
-                                        <button
-                                            onClick={handleCancelVariantEdit}
-                                            style={{
-                                                padding: '6px 12px',
-                                                border: '1px solid #dc3545',
-                                                borderRadius: '4px',
-                                                backgroundColor: 'white',
-                                                color: '#dc3545',
-                                                cursor: 'pointer',
-                                                fontSize: '12px',
-                                                fontWeight: '500'
-                                            }}
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                )}
                             </div>
-
-                            {/* Show message when combination is not available */}
-                            {hasSizeVariant && hasColorVariant && selectedSize && selectedColor && !selectedVariant && (
-                                <div style={{
-                                    padding: '12px',
-                                    backgroundColor: '#fff3cd',
-                                    border: '1px solid #ffeaa7',
-                                    borderRadius: '6px',
-                                    color: '#856404',
-                                    marginBottom: '16px',
-                                    fontSize: '14px',
-                                    textAlign: 'center'
-                                }}>
-                                    The selected combination ({selectedSize} / {selectedColor}) is not available.
-                                </div>
-                            )}
 
                             <div style={{
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '12px'
                             }}>
-                                {(isEditingVariants ? editingVariants : variants).map((variant, index) => (
-                                    <div
-                                        key={index}
-                                        style={{
-                                            padding: '16px',
-                                            border: `2px solid ${selectedVariant?.variant_id === variant.variant_id ? '#007bff' : '#e0e0e0'}`,
-                                            borderRadius: '8px',
-                                            backgroundColor: selectedVariant?.variant_id === variant.variant_id ? '#e3f2fd' : 'white',
-                                            cursor: isEditingVariants ? 'default' : 'pointer',
-                                            transition: 'all 0.2s ease',
-                                            display: 'flex',
-                                            alignItems: 'flex-start',
-                                            gap: '12px'
-                                        }}
-                                        onClick={isEditingVariants ? undefined : () => handleVariantCheckboxChange(variant)}
-                                    >
-                                        {/* Checkbox - Only show when not editing */}
-                                        {!isEditingVariants && (
-                                            <div style={{
-                                                flexShrink: 0,
-                                                marginTop: '2px'
-                                            }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedVariant?.variant_id === variant.variant_id}
-                                                    onChange={() => handleVariantCheckboxChange(variant)}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    style={{
-                                                        width: '18px',
-                                                        height: '18px',
-                                                        cursor: 'pointer'
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
+                                {(isEditingVariants ? editingVariants : variants).map((variant, index) => {
+                                    const isOutOfStock = parseInt(variant.quantity_in_stock) === 0;
 
-                                        {/* Variant Details */}
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{
-                                                fontWeight: '600',
-                                                fontSize: '14px',
-                                                marginBottom: '12px'
-                                            }}>
-                                                {hasBothVariant && variant.size && variant.color
-                                                    ? `${variant.size} / ${variant.color}`
-                                                    : variant.size || variant.color || 'Standard'
-                                                }
-                                                {variant.variant_type && variant.variant_type !== 'none' && (
-                                                    <span style={{
-                                                        fontSize: '12px',
-                                                        color: '#666',
-                                                        fontWeight: 'normal',
-                                                        marginLeft: '8px'
-                                                    }}>
-                                                        ({variant.variant_type})
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            <div style={{
-                                                display: 'grid',
-                                                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                                    return (
+                                        <div
+                                            key={index}
+                                            style={{
+                                                padding: '16px',
+                                                border: `2px solid ${isOutOfStock
+                                                    ? '#ccc'
+                                                    : selectedVariant?.variant_id === variant.variant_id
+                                                        ? '#4b005eff'
+                                                        : '#a700bdff'
+                                                    }`,
+                                                borderRadius: '8px',
+                                                backgroundColor: isOutOfStock
+                                                    ? '#f5f5f5'
+                                                    : selectedVariant?.variant_id === variant.variant_id
+                                                        ? '#f4e0ffff'
+                                                        : 'white',
+                                                cursor: isEditingVariants || isOutOfStock ? 'default' : 'pointer',
+                                                transition: 'all 0.2s ease',
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
                                                 gap: '12px',
-                                                fontSize: '14px'
-                                            }}>
-                                                {/* Stock Quantity */}
-                                                <div>
-                                                    <strong>Stock:</strong>
-                                                    {isEditingVariants ? (
-                                                        <input
-                                                            type="number"
-                                                            value={variant.quantity_in_stock || 0}
-                                                            onChange={(e) => handleVariantInputChange(index, 'quantity_in_stock', e.target.value)}
-                                                            min="0"
-                                                            style={{
-                                                                marginLeft: '8px',
-                                                                padding: '4px 8px',
-                                                                border: '1px solid #007c34ff',
-                                                                borderRadius: '4px',
-                                                                width: '80px',
-                                                                fontSize: '14px'
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        ` ${variant.quantity_in_stock}`
+                                                position: 'relative',
+                                                opacity: isOutOfStock ? 0.7 : 1
+                                            }}
+                                            onClick={isEditingVariants || isOutOfStock ? undefined : () => handleVariantCheckboxChange(variant)}
+                                        >
+                                            {/* Out of stock badge */}
+                                            {isOutOfStock && !isEditingVariants && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '-10px',
+                                                    right: '10px',
+                                                    backgroundColor: '#dc3545',
+                                                    color: 'white',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px',
+                                                    fontSize: '12px',
+                                                    fontWeight: 'bold',
+                                                    zIndex: 1
+                                                }}>
+                                                    NO STOCKS AVAILABLE
+                                                </div>
+                                            )}
+
+                                            {/* Checkbox - Only show when not editing */}
+                                            {!isEditingVariants && (
+                                                <div style={{
+                                                    flexShrink: 0,
+                                                    marginTop: '2px'
+                                                }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedVariant?.variant_id === variant.variant_id}
+                                                        onChange={() => !isOutOfStock && handleVariantCheckboxChange(variant)}
+                                                        disabled={isOutOfStock}
+                                                        style={{
+                                                            width: '18px',
+                                                            height: '18px',
+                                                            cursor: isOutOfStock ? 'not-allowed' : 'pointer',
+                                                            accentColor: isOutOfStock ? '#ccc' : '#520063ff',
+                                                            opacity: isOutOfStock ? 0.5 : 1
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Variant Details */}
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{
+                                                    fontWeight: '600',
+                                                    fontSize: '14px',
+                                                    marginBottom: '12px',
+                                                    color: isOutOfStock ? '#999' : 'inherit',
+                                                    textDecoration: isOutOfStock ? 'line-through' : 'none'
+                                                }}>
+                                                    {hasBothVariant && variant.size && variant.color
+                                                        ? `${variant.size} / ${variant.color}`
+                                                        : variant.size || variant.color || 'Standard'
+                                                    }
+                                                    {variant.variant_type && variant.variant_type !== 'none' && (
+                                                        <span style={{
+                                                            fontSize: '12px',
+                                                            color: isOutOfStock ? '#999' : '#666',
+                                                            fontWeight: 'normal',
+                                                            marginLeft: '8px'
+                                                        }}>
+                                                            ({variant.variant_type})
+                                                        </span>
                                                     )}
                                                 </div>
 
-                                                {/* Purchase Price */}
-                                                <div>
-                                                    <strong>Purchase:</strong>
-                                                    {isEditingVariants ? (
-                                                        <input
-                                                            type="number"
-                                                            value={variant.purchase_price || 0}
-                                                            onChange={(e) => handleVariantInputChange(index, 'purchase_price', e.target.value)}
-                                                            min="0"
-                                                            step="0.01"
-                                                            style={{
-                                                                marginLeft: '8px',
-                                                                padding: '4px 8px',
-                                                                border: '1px solid #007c34ff',
-                                                                borderRadius: '4px',
-                                                                width: '80px',
-                                                                fontSize: '14px'
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        ` $${variant.purchase_price}`
-                                                    )}
-                                                </div>
+                                                <div style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                                                    gap: '12px',
+                                                    fontSize: '14px',
+                                                    color: isOutOfStock ? '#999' : 'inherit'
+                                                }}>
+                                                    {/* Stock Quantity */}
+                                                    <div>
+                                                        <strong>Stock:</strong>
+                                                        {isEditingVariants ? (
+                                                            <input
+                                                                type="number"
+                                                                value={variant.quantity_in_stock || 0}
+                                                                onChange={(e) => handleVariantInputChange(index, 'quantity_in_stock', e.target.value)}
+                                                                min="0"
+                                                                style={{
+                                                                    marginLeft: '8px',
+                                                                    padding: '4px 8px',
+                                                                    border: '1px solid #007c34ff',
+                                                                    borderRadius: '4px',
+                                                                    width: '80px',
+                                                                    fontSize: '14px'
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            <span style={{
+                                                                color: isOutOfStock ? '#dc3545' : 'inherit',
+                                                                fontWeight: isOutOfStock ? 'bold' : 'normal'
+                                                            }}>
+                                                                {isOutOfStock ? '0 (OUT OF STOCK)' : ` ${variant.quantity_in_stock}`}
+                                                            </span>
+                                                        )}
+                                                    </div>
 
-                                                {/* Selling Price */}
-                                                <div>
-                                                    <strong>Selling:</strong>
-                                                    {isEditingVariants ? (
-                                                        <input
-                                                            type="number"
-                                                            value={variant.selling_price || 0}
-                                                            onChange={(e) => handleVariantInputChange(index, 'selling_price', e.target.value)}
-                                                            min="0"
-                                                            step="0.01"
-                                                            style={{
-                                                                marginLeft: '8px',
-                                                                padding: '4px 8px',
-                                                                border: '1px solid #007c34ff',
-                                                                borderRadius: '4px',
-                                                                width: '80px',
-                                                                fontSize: '14px'
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        ` $${variant.selling_price}`
-                                                    )}
+                                                    {/* Purchase Price */}
+                                                    <div>
+                                                        <strong>Purchase:</strong>
+                                                        {isEditingVariants ? (
+                                                            <input
+                                                                type="number"
+                                                                value={variant.purchase_price || 0}
+                                                                onChange={(e) => handleVariantInputChange(index, 'purchase_price', e.target.value)}
+                                                                min="0"
+                                                                step="0.01"
+                                                                style={{
+                                                                    marginLeft: '8px',
+                                                                    padding: '4px 8px',
+                                                                    border: '1px solid #007c34ff',
+                                                                    borderRadius: '4px',
+                                                                    width: '80px',
+                                                                    fontSize: '14px'
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            ` $${variant.purchase_price}`
+                                                        )}
+                                                    </div>
+
+                                                    {/* Selling Price */}
+                                                    <div>
+                                                        <strong>Selling:</strong>
+                                                        {isEditingVariants ? (
+                                                            <input
+                                                                type="number"
+                                                                value={variant.selling_price || 0}
+                                                                onChange={(e) => handleVariantInputChange(index, 'selling_price', e.target.value)}
+                                                                min="0"
+                                                                step="0.01"
+                                                                style={{
+                                                                    marginLeft: '8px',
+                                                                    padding: '4px 8px',
+                                                                    border: '1px solid #007c34ff',
+                                                                    borderRadius: '4px',
+                                                                    width: '80px',
+                                                                    fontSize: '14px'
+                                                                }}
+                                                            />
+                                                        ) : (
+                                                            ` $${variant.selling_price}`
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -875,15 +934,15 @@ export default function ViewProduct() {
                                 </span>
                                 <button
                                     onClick={() => setQuantity(prev => prev + 1)}
-                                    disabled={selectedVariant && quantity >= selectedVariant.quantity_in_stock}
+                                    disabled={!selectedVariant || quantity >= parseInt(selectedVariant?.quantity_in_stock || 0)}
                                     style={{
                                         width: '40px',
                                         height: '40px',
                                         border: '1px solid #ddd',
                                         background: 'white',
                                         borderRadius: '6px',
-                                        cursor: selectedVariant && quantity < selectedVariant.quantity_in_stock ? 'pointer' : 'not-allowed',
-                                        opacity: selectedVariant && quantity < selectedVariant.quantity_in_stock ? 1 : 0.5,
+                                        cursor: selectedVariant && quantity < parseInt(selectedVariant?.quantity_in_stock || 0) ? 'pointer' : 'not-allowed',
+                                        opacity: selectedVariant && quantity < parseInt(selectedVariant?.quantity_in_stock || 0) ? 1 : 0.5,
                                         fontSize: '18px',
                                         display: 'flex',
                                         alignItems: 'center',
@@ -915,8 +974,8 @@ export default function ViewProduct() {
                         flexDirection: 'row'
                     }}>
                         <button
-                            onClick={handleAddToCart}
-                            disabled={!selectedVariant}
+                            onClick={(handleAddToCart)}
+                            disabled={!selectedVariant || parseInt(selectedVariant?.quantity_in_stock || 0) === 0}
                             style={{
                                 flex: 1,
                                 padding: '16px 24px',
@@ -924,10 +983,10 @@ export default function ViewProduct() {
                                 borderRadius: '8px',
                                 fontSize: '16px',
                                 fontWeight: '600',
-                                cursor: selectedVariant ? 'pointer' : 'not-allowed',
-                                backgroundColor: selectedVariant ? '#d89df0ff' : '#ccc',
+                                cursor: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? 'pointer' : 'not-allowed',
+                                backgroundColor: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? '#d89df0ff' : '#ccc',
                                 color: 'white',
-                                opacity: selectedVariant ? 1 : 0.6,
+                                opacity: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? 1 : 0.6,
                                 minWidth: '140px',
                                 transition: 'all 0.2s ease',
                                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
@@ -937,8 +996,8 @@ export default function ViewProduct() {
                         </button>
 
                         <button
-                            onClick={handleBuyNow}
-                            disabled={!selectedVariant}
+                            onClick={handlewithdraw}
+                            disabled={!selectedVariant || parseInt(selectedVariant?.quantity_in_stock || 0) === 0}
                             style={{
                                 flex: 1,
                                 padding: '16px 24px',
@@ -946,10 +1005,10 @@ export default function ViewProduct() {
                                 borderRadius: '8px',
                                 fontSize: '16px',
                                 fontWeight: '600',
-                                cursor: selectedVariant ? 'pointer' : 'not-allowed',
-                                backgroundColor: selectedVariant ? '#7a62a0ff' : '#ccc',
+                                cursor: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? 'pointer' : 'not-allowed',
+                                backgroundColor: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? '#7a62a0ff' : '#ccc',
                                 color: 'white',
-                                opacity: selectedVariant ? 1 : 0.6,
+                                opacity: selectedVariant && parseInt(selectedVariant?.quantity_in_stock || 0) > 0 ? 1 : 0.6,
                                 minWidth: '140px',
                                 transition: 'all 0.2s ease',
                                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)'

@@ -1,0 +1,48 @@
+/* CartLoadingOverlay.css */
+.cart-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    /* Transparent black */
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+    pointer-events: auto;
+    /* Make sure it captures all clicks */
+}
+
+.cart-loading-content {
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 20px 30px;
+    border-radius: 8px;
+    text-align: center;
+    color: white;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.cart-loading-text {
+    color: #f8f9fa;
+    font-size: 14px;
+    margin: 0;
+}
+
+/* Spinner customization */
+.spinner-border {
+    width: 2rem;
+    height: 2rem;
+    border-width: 0.2em;
+}
+
+/* Prevent interactions with cart when loading */
+.cart-loading-active .pc-h-item {
+    pointer-events: none !important;
+}
+
+.cart-loading-active .pc-head-link {
+    opacity: 0.5;
+}

@@ -15,7 +15,7 @@ export default function MainLayout() {
       <Header />
       <div className="pc-container">
         <div className="pc-content">
-          <Breadcrumbs />
+          {/* <Breadcrumbs /> */}
           <NavigationScroll>
             <Outlet />
           </NavigationScroll>

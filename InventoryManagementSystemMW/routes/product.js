@@ -153,7 +153,7 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
 
     // Handle the uploaded file - store as "uploads\filename"
     if (req.file) {
-        attachmentPath = `uploads\\${req.file.filename}`; // Store as "uploads\filename"
+        attachmentPath = `uploads\\${req.file.filename}`;
     }
 
     // Parse the product data from the form
@@ -177,10 +177,10 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
     const trx = await knex.transaction();
 
     try {
-        // Insert into product_master table with the file path
-        const [productId] = await trx('product_master')
+        // Insert into product_master table
+        const [productIdResult] = await trx('product_master')
             .insert({
-                attachment: attachmentPath, // Store as "uploads\filename"
+                attachment: attachmentPath,
                 product_name,
                 product_description,
                 product_category,
@@ -192,6 +192,9 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
                 created_at: new Date()
             })
             .returning('product_id');
+
+        // Extract product_id (handles both object and direct value)
+        const productId = productIdResult.product_id || productIdResult;
 
         // If it's a variant product, insert variants
         if (variant_type !== "none" && variants.length > 0) {
@@ -225,11 +228,33 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
                 };
             });
 
-            await trx('product_variant').insert(variantData);
+            // Insert variants and get all variant IDs
+            const insertedVariants = await trx('product_variant')
+                .insert(variantData)
+                .returning('variant_id');
+
+            // Create logs for each variant
+            const logEntries = insertedVariants.map(variantResult => {
+                // Extract variant_id (handles both object and direct value)
+                const variantId = variantResult.variant_id || variantResult;
+
+                return {
+                    product_id: productId,
+                    variant_id: variantId,
+                    product_changes: `${created_by} added a product variant.`,
+                    created_by: created_by,
+                    created_at: new Date()
+                };
+            });
+
+            // Insert all logs
+            if (logEntries.length > 0) {
+                await trx('product_logs').insert(logEntries);
+            }
         }
         // If it's a simple product without variants
         else if (variant_type === "none") {
-            await trx('product_variant').insert({
+            const [insertedVariantResult] = await trx('product_variant').insert({
                 product_id: productId,
                 variant_type: "none",
                 size: null,
@@ -239,6 +264,17 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
                 selling_price: selling_price || 0,
                 created_by: created_by,
                 created_at: new Date()
+            }).returning('variant_id');
+
+            // Extract variant_id
+            const variantId = insertedVariantResult.variant_id || insertedVariantResult;
+
+            await trx('product_logs').insert({
+                product_id: productId,
+                variant_id: variantId,
+                product_changes: `${created_by} added a product.`,
+                created_by: created_by,
+                created_at: new Date()
             });
         }
 
@@ -246,7 +282,7 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
         res.status(200).json({
             message: "Product added successfully",
             product_id: productId,
-            attachment: attachmentPath // Return the full path
+            attachment: attachmentPath
         });
 
     } catch (error) {
@@ -264,7 +300,6 @@ router.post('/add-product', upload.single('attachment'), async function (req, re
         });
     }
 });
-
 
 router.get('/get-all-product-variants', async function (req, res) {
     try {
@@ -341,6 +376,16 @@ router.post('/add-cart', async function (req, res) {
             product_price,
             created_by
         })
+
+        await knex('product_logs').insert({
+            product_id,
+            variant_id,
+            product_changes: `${created_by} added to the cart`,
+            created_by,
+            created_at: new Date()
+        })
+
+
         res.status(200).json({ message: "Added to cart successfully" });
     } catch (err) {
         console.log('INTERNAL ERROR: ', err)
@@ -385,6 +430,206 @@ router.post('/remove-from-cart', async function (req, res) {
         console.log('Internal Error: ', err)
     }
 })
+
+router.post('/update-product', upload.single('attachment'), async function (req, res) {
+    try {
+        let attachmentPath = null; // DECLARE the variable here
+
+        if (!req.body.productData) {
+            console.log('productData is missing');
+            return res.status(400).json({ success: false, message: 'productData is required' });
+        }
+
+        const productData = JSON.parse(req.body.productData);
+        console.log('Parsed productData:', productData);
+
+        if (req.file) {
+            attachmentPath = `uploads\\${req.file.filename}`; // Now this is properly defined
+            console.log('New attachment path:', attachmentPath);
+        } else {
+            // Keep existing attachment if no new file is uploaded
+            const existingProduct = await knex('product_master')
+                .where({ product_id: productData.product_id })
+                .select('attachment')
+                .first();
+
+            if (existingProduct && existingProduct.attachment) {
+                attachmentPath = existingProduct.attachment;
+                console.log('Keeping existing attachment:', attachmentPath);
+            }
+        }
+
+        // Prepare update data
+        const updateData = {
+            product_name: productData.product_name,
+            product_description: productData.product_description,
+            product_category: productData.product_category,
+            product_subcategory: productData.product_subcategory,
+            product_sku: productData.product_sku,
+            unit_of_measure: productData.unit_of_measure
+        };
+
+        // Only update attachment if we have a new path
+        if (attachmentPath !== null) {
+            updateData.attachment = attachmentPath;
+        }
+
+        // Update product master
+        await knex('product_master')
+            .where({ product_id: productData.product_id })
+            .update(updateData);
+
+        // Handle variants if they exist
+        if (productData.variants && Array.isArray(productData.variants)) {
+            for (const variant of productData.variants) {
+                // Check if variant has variant_id (for updates) or needs to be inserted
+                if (variant.variant_id) {
+                    await knex('product_variant')
+                        .where({
+                            variant_id: variant.variant_id,
+                            product_id: productData.product_id
+                        })
+                        .update({
+                            size: variant.size || null,
+                            color: variant.color || null,
+                            quantity_in_stock: variant.quantity_in_stock || 0,
+                            purchase_price: variant.purchase_price || 0,
+                            selling_price: variant.selling_price || 0
+                        });
+                } else {
+                    // Insert new variant
+                    await knex('product_variant').insert({
+                        product_id: productData.product_id,
+                        size: variant.size || null,
+                        color: variant.color || null,
+                        quantity_in_stock: variant.quantity_in_stock || 0,
+                        purchase_price: variant.purchase_price || 0,
+                        selling_price: variant.selling_price || 0
+                    });
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Product updated successfully',
+            attachmentPath: attachmentPath
+        });
+
+    } catch (error) {
+        console.log('Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error: ' + error.message
+        });
+    }
+});
+
+router.post(`/archive-product`, async function (req, res) {
+    try {
+        const { product_id, updated_by } = req.body;
+
+        await knex('product_master').where({ product_id: product_id }).update({
+            is_active: false,
+            updated_by: updated_by,
+            updated_at: new Date()
+        })
+
+        res.status(200).json({ message: "archived successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+
+router.post(`/unarchive-product`, async function (req, res) {
+    try {
+        const { product_id, updated_by } = req.body;
+
+        await knex('product_master').where({ product_id: product_id }).update({
+            is_active: true,
+            updated_by: updated_by,
+            updated_at: new Date()
+        })
+
+        res.status(200).json({ message: "archived successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+
+router.post(`/delete-product`, async function (req, res) {
+    try {
+        const { product_id, updated_by } = req.body;
+
+        await knex('product_master').where({ product_id: product_id }).del();
+        await knex('product_variant').where({ product_id: product_id }).del();
+        await knex('product_cart').where({ product_id: product_id }).del();
+        res.status(200).json({ message: "archived successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+router.post('/product-logs', async function (req, res) {
+    try {
+        const { changes_made, created_by, product_id, variant_id } = req.body;
+
+        await knex('product_logs').insert({
+            product_changes: created_by + ' updated ' + changes_made,
+            product_id: product_id,
+            variant_id: variant_id,
+            created_by: created_by,
+            created_at: new Date()
+        })
+        res.status(200).json({ message: "edit logs successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+router.post('/withdraw-product', async function (req, res) {
+    try {
+        const { product_id, variant_id, updated_by, quantity } = req.body;
+
+        const variantData = await knex('product_variant').where({ variant_id }).first();
+        const varDataQ = Number(variantData.quantity_in_stock)
+        const newQuantity = varDataQ - quantity;
+
+        await knex('product_variant').where({ variant_id: variant_id }).update({
+            quantity_in_stock: newQuantity,
+            updated_by: updated_by,
+            updated_at: new Date()
+        })
+        res.status(200).json({ message: "withdraw product successfully" });
+
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+});
+
+
+router.post('/remove-all-cart', async function (req, res) {
+    try {
+        const { created_by } = req.body;
+
+        await knex('product_cart').where({ created_by: created_by }).del();
+        res.status(200).json({ message: "deleted product cart successfully" });
+    } catch (err) {
+        console.log('INTERNAL ERROR: ', err)
+    }
+})
+
+
+
+
+
+
+
+
+
+
 
 
 

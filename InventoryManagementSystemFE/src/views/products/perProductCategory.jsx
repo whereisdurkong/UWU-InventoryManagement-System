@@ -1,94 +1,62 @@
 import axios from 'axios';
 import config from 'config';
 import { useEffect, useState } from 'react';
-import { Table, Badge, Image, Form, Button, ButtonGroup } from 'react-bootstrap';
+import { Table, Badge, Image } from 'react-bootstrap';
 // project-imports
 import MainCard from 'components/MainCard';
-import BTN from '../../components/reactBits/BTN';
-import { useNavigate } from 'react-router-dom';
-import { info } from 'sass';
-import { categories } from '../../components/categories';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
-export default function ProductTable() {
+
+export default function PerCategoryTable() {
     const [products, setProducts] = useState([]);
     const [productVariants, setProductVariants] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedCategory, setSelectedCategory] = useState('all');
-    const [filteredProducts, setFilteredProducts] = useState([]);
-    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
 
+    const [searchParams] = useSearchParams();
+    const category = searchParams.get('category');
     const navigate = useNavigate();
 
     useEffect(() => {
         const fetchData = async () => {
-            try {
-                const rawDataVariant = await axios.get(`${config.baseApi}/product/get-all-product-variants`);
-                const productsDataVairant = rawDataVariant.data;
-                setProductVariants(productsDataVairant);
-                console.log('Products variants data:', productsDataVairant);
-            } catch (err) {
-                console.log('Unable to fetch all products variant: ', err);
-            } finally {
-                setLoading(false);
-            }
+            setLoading(true);
 
             try {
-                const rawData = await axios.get(`${config.baseApi}/product/get-all-product`);
-                const productsData = rawData.data;
-                setProducts(productsData);
-                setFilteredProducts(sortProducts(productsData, 'desc')); // Sort initially
-                console.log('Products data:', productsData);
+                const decodedCategory = decodeURIComponent(category);
+
+                const [variantsResponse, productsResponse] = await Promise.all([
+                    axios.get(`${config.baseApi}/product/get-all-product-variants`),
+                    axios.get(`${config.baseApi}/product/get-all-product`)
+                ]);
+
+                setProductVariants(variantsResponse.data);
+
+                const allProducts = productsResponse.data;
+                const CategoryFilter = allProducts.filter(product => {
+                    if (!product.product_category) return false;
+
+                    if (product.product_category === decodedCategory) return true;
+
+                    if (product.product_category.toLowerCase() === decodedCategory.toLowerCase()) return true;
+
+                    const normalizedDB = product.product_category.trim().toLowerCase();
+                    const normalizedURL = decodedCategory.trim().toLowerCase();
+                    if (normalizedDB === normalizedURL) return true;
+
+                    return false;
+                });
+
+                console.log(`Found ${CategoryFilter.length} products for category: ${decodedCategory}`);
+                setProducts(CategoryFilter);
+
             } catch (err) {
-                console.log('Unable to fetch all products: ', err);
+                console.error('Error fetching data:', err);
             } finally {
                 setLoading(false);
             }
         };
+
         fetchData();
-    }, []);
-
-    // Sort products function
-    const sortProducts = (productsArray, order) => {
-        const sortedProducts = [...productsArray];
-        sortedProducts.sort((a, b) => {
-            const dateA = new Date(a.created_at);
-            const dateB = new Date(b.created_at);
-
-            if (order === 'asc') {
-                return dateA - dateB; // Oldest to newest
-            } else {
-                return dateB - dateA; // Newest to oldest (default)
-            }
-        });
-        return sortedProducts;
-    };
-
-    // Filter products when category changes
-    useEffect(() => {
-        let filtered = products;
-
-        if (selectedCategory !== 'all') {
-            filtered = products.filter(product =>
-                product.product_category?.toString() === selectedCategory.toString()
-            );
-        }
-
-        // Apply sorting to filtered products
-        const sorted = sortProducts(filtered, sortOrder);
-        setFilteredProducts(sorted);
-    }, [selectedCategory, products, sortOrder]); // Added sortOrder as dependency
-
-    // Handle sort order change
-    const handleSortChange = (order) => {
-        setSortOrder(order);
-    };
-
-    // Function to check if a product has variants (returns boolean)
-    const hasVariants = (productId) => {
-        return productVariants.some(variant =>
-            variant.product_id.toString() === productId.toString()
-        );
-    };
+    }, [category]);
 
     // Function to count how many variants a product has
     const countVariants = (productId) => {
@@ -116,10 +84,6 @@ export default function ProductTable() {
         return fullUrl;
     };
 
-    const handleCategoryChange = (e) => {
-        setSelectedCategory(e.target.value);
-    };
-
     if (loading) {
         return (
             <MainCard title="Products">
@@ -134,55 +98,10 @@ export default function ProductTable() {
         navigate(`/products/product-view?${params.toString()}`);
     }
 
-    // Extract unique categories from products for dropdown
-    const extractCategories = () => {
-        const categoriesSet = new Set();
-        products.forEach(product => {
-            if (product.product_category) {
-                categoriesSet.add(product.product_category);
-            }
-        });
-        return Array.from(categoriesSet).sort();
-    };
-
-    const productCategories = extractCategories();
-
-    const handleAdd = () => {
-        navigate(`/products/add-product`);
-    }
-
     return (
         <MainCard
-            title="All Products"
-            secondary={
-                <div className="d-flex align-items-center gap-2">
-                    <Form.Select
-                        style={{ width: '200px' }}
-                        value={sortOrder}
-                        onChange={(e) => handleSortChange(e.target.value)}
-                        size="sm"
-                    >
-                        <option value="desc">Newest - Oldest</option>
-                        <option value="asc">Oldest - Newest</option>
-                    </Form.Select>
+            title={category}
 
-                    <Form.Select
-                        style={{ width: '200px' }}
-                        value={selectedCategory}
-                        onChange={handleCategoryChange}
-                        size="sm"
-                    >
-                        <option value="all">All Categories</option>
-                        {productCategories.map(category => (
-                            <option key={category} value={category}>
-                                {category}
-                            </option>
-                        ))}
-                    </Form.Select>
-
-                    <BTN label={'+ Add Product'} size='medium' onClick={handleAdd} />
-                </div>
-            }
         >
             <Table responsive hover className="mb-0">
                 <thead>
@@ -195,40 +114,17 @@ export default function ProductTable() {
                         <th>Sub-category</th>
                         <th>Product SKU</th>
                         <th>Variants</th>
-                        <th>
-                            Created Date
-                            <span className="ms-1">
-                                {sortOrder === 'desc' ? '▼' : '▲'}
-                            </span>
-                        </th>
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredProducts.length > 0 ? (
-                        filteredProducts.map((product) => {
+                    {products.length > 0 ? (
+                        products.map((product) => {
                             const imageUrl = getImageUrl(product.attachment);
                             const variantCount = countVariants(product.product_id);
                             const productHasVariants = variantCount >= 2;
 
-                            // Format date for display
-                            const formatDate = (dateString) => {
-                                if (!dateString) return 'N/A';
-                                const date = new Date(dateString);
-                                return date.toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                });
-                            };
-
                             return (
-                                <tr
-                                    key={product.product_id}
-                                    onClick={() => handleView(product)}
-                                    style={{ cursor: 'pointer' }}
-                                >
+                                <tr key={product.product_id} onClick={() => handleView(product)}>
                                     <td>{product.product_id}</td>
                                     <td>
                                         {imageUrl ? (
@@ -307,16 +203,13 @@ export default function ProductTable() {
                                             </Badge>
                                         )}
                                     </td>
-                                    <td>
-                                        {formatDate(product.created_at)}
-                                    </td>
                                 </tr>
                             );
                         })
                     ) : (
                         <tr>
-                            <td colSpan="9" className="text-center">
-                                {selectedCategory === 'all' ? 'No products found' : `No products found in "${selectedCategory}" category`}
+                            <td colSpan="8" className="text-center">
+                                No products found
                             </td>
                         </tr>
                     )}

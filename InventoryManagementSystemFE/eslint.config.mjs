@@ -32,14 +32,14 @@ export default [
       sourceType: 'module',
       parserOptions: {
         ecmaFeatures: {
-          jsx: true // ✅ Enable JSX parsing
+          jsx: true // Enable JSX parsing
         }
       }
     },
 
     settings: {
       react: {
-        version: 'detect' // ✅ Detect the installed React version
+        version: 'detect' // Detect the installed React version
       }
     },
 

@@ -4,7 +4,7 @@ import Row from 'react-bootstrap/Row';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Table from 'react-bootstrap/Table';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import axios from 'axios';
 import config from 'config';
@@ -13,6 +13,24 @@ import config from 'config';
 import MainCard from 'components/MainCard';
 
 // ==============================|| ADD PRODUCT PAGE ||============================== //
+import { categories } from '../../components/categories';
+import SessionAlert from '../../components/SessionAlert';
+import ModalCard from '../../components/ModalCard';
+import LoadingSpinner from '../../routes/Spinner';
+
+// Validation function to prevent negative numbers
+const validateNonNegativeNumber = (value) => {
+    if (value === '') return '';
+    const num = Number(value);
+    return isNaN(num) ? '' : Math.max(0, num).toString();
+};
+
+// Validation function to prevent negative or zero numbers (for prices)
+const validatePositiveNumber = (value) => {
+    if (value === '') return '';
+    const num = Number(value);
+    return isNaN(num) ? '' : Math.max(0.01, num).toString();
+};
 
 export default function AddProduct() {
     // State management
@@ -22,8 +40,13 @@ export default function AddProduct() {
     const [productVariant, setProductVariant] = useState("none");
     const [variants, setVariants] = useState([]);
 
-    const empInfo = JSON.parse(localStorage.getItem('user'));
+    const [success, setSuccess] = useState('');
+    const [error, setError] = useState('');
 
+    const [modalState, setModalState] = useState(false);
+    const [modalCntnt, setModalCntnt] = useState('')
+    const empInfo = JSON.parse(localStorage.getItem('user'));
+    const [isLoading, setIsLoading] = useState(false)
     // Form fields state
     const [formData, setFormData] = useState({
         productName: "",
@@ -58,20 +81,6 @@ export default function AddProduct() {
         borderRadius: "4px"
     };
 
-    // Categories data
-    const categories = [
-        { category: "Electronics", subcategories: ["Laptops", "Desktops", "Printers", "Monitors", "Mobile Phones", "Accessories"] },
-        { category: "Office Supplies", subcategories: ["Paper Products", "Writing Instruments", "Desk Accessories", "Binders & Folders", "Printer Ink & Toner"] },
-        { category: "Furniture", subcategories: ["Chairs", "Tables", "Cabinets", "Shelving", "Workstations"] },
-        { category: "Appliances", subcategories: ["Small Appliances", "Large Appliances", "Air-conditioning", "Kitchen Equipment"] },
-        { category: "Tools & Hardware", subcategories: ["Hand Tools", "Power Tools", "Fasteners", "Construction Materials", "Safety Equipment"] },
-        { category: "Cleaning Supplies", subcategories: ["Chemicals", "Mops & Brooms", "Towels", "Disinfectants", "Trash Bags"] },
-        { category: "Food & Beverages", subcategories: ["Canned Goods", "Dry Goods", "Snacks", "Drinks", "Frozen Items"] },
-        { category: "Clothing & Apparel", subcategories: ["Shirts", "Pants", "Uniforms", "Shoes", "Accessories"] },
-        { category: "Automotive", subcategories: ["Car Parts", "Motorcycle Parts", "Oils & Fluids", "Accessories", "Batteries"] },
-        { category: "Medical Supplies", subcategories: ["First Aid", "Medicines", "Consumables", "Equipment", "PPE"] }
-    ];
-
     // Event handlers
     const handleCategoryChange = (e) => {
         const value = e.target.value;
@@ -91,7 +100,7 @@ export default function AddProduct() {
         if (file && (file.type === "image/jpeg" || file.type === "image/png")) {
             setSelectedFile(file);
         } else {
-            alert("Please select a JPEG or PNG image.");
+            setError("Please select a JPEG or PNG image.");
             e.target.value = null;
             setSelectedFile(null);
         }
@@ -111,9 +120,18 @@ export default function AddProduct() {
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
+
+        // Apply validation for numeric fields
+        let validatedValue = value;
+        if (name === 'stocks') {
+            validatedValue = validateNonNegativeNumber(value);
+        } else if (name === 'purchasePrice' || name === 'sellingPrice') {
+            validatedValue = validatePositiveNumber(value);
+        }
+
         setFormData(prev => ({
             ...prev,
-            [name]: value
+            [name]: validatedValue
         }));
     };
 
@@ -135,8 +153,17 @@ export default function AddProduct() {
     };
 
     const updateVariantField = (id, field, value) => {
+        let validatedValue = value;
+
+        // Apply validation for variant fields
+        if (field === 'stock') {
+            validatedValue = validateNonNegativeNumber(value);
+        } else if (field === 'purchasePrice' || field === 'sellingPrice') {
+            validatedValue = validatePositiveNumber(value);
+        }
+
         setVariants(variants.map(variant =>
-            variant.id === id ? { ...variant, [field]: value } : variant
+            variant.id === id ? { ...variant, [field]: validatedValue } : variant
         ));
     };
 
@@ -163,7 +190,120 @@ export default function AddProduct() {
         return productVariant === "none" || variants.length === 0;
     };
 
-    const handleSave = async () => {
+    const validateFormData = () => {
+        // Clear any existing errors first
+        setError('');
+
+        // Validate required fields are not empty
+        if (!formData.productName.trim()) {
+            setError("Product name is required!");
+            return false;
+        }
+        if (!formData.description.trim()) {
+            setError("Product description is required!");
+            return false;
+        }
+
+        if (!formData.category) {
+            setError("Product category is required!");
+            return false;
+        }
+
+        if (!formData.subCategory && selectedCategory) {
+            setError("Product sub-category is required!");
+            return false;
+        }
+
+        if (!formData.uom) {
+            setError("Unit of measurement is required!");
+            return false;
+        }
+        if (!formData.sku.trim()) {
+            setError("Product SKU is required!");
+            return false;
+        }
+
+        if (!selectedFile) {
+            setError("Product image is required!");
+            return false;
+        }
+
+
+
+
+
+        // Validate main product fields if shown
+        if (shouldShowMainProductFields()) {
+            const stocks = parseInt(formData.stocks) || 0;
+            const purchasePrice = parseFloat(formData.purchasePrice) || 0;
+            const sellingPrice = parseFloat(formData.sellingPrice) || 0;
+
+            if (stocks < 0) {
+                setError("Stock quantity cannot be negative!");
+                return false;
+            }
+
+            if (purchasePrice <= 0) {
+                setError("Purchase price must be greater than 0!");
+                return false;
+            }
+
+            if (sellingPrice <= 0) {
+                setError("Selling price must be greater than 0!");
+                return false;
+            }
+
+            // Check if selling price is greater than purchase price
+            if (sellingPrice <= purchasePrice) {
+                setModalState(true);
+                setModalCntnt('Selling price is not greater than purchase price. Are you sure you want to continue?');
+                // Return false here to prevent form submission until user confirms modal
+                return false;
+            }
+        }
+
+        // Validate variant fields if exist
+        if (variants.length > 0) {
+            for (const variant of variants) {
+                const stock = parseInt(variant.stock) || 0;
+                const purchasePrice = parseFloat(variant.purchasePrice) || 0;
+                const sellingPrice = parseFloat(variant.sellingPrice) || 0;
+
+                if (stock < 0) {
+                    setError(`Stock quantity for variant "${variant.type || 'unnamed'}" cannot be negative!`);
+                    return false;
+                }
+
+                if (purchasePrice <= 0) {
+                    setError(`Purchase price for variant "${variant.type || 'unnamed'}" must be greater than 0!`);
+                    return false;
+                }
+
+                if (sellingPrice <= 0) {
+                    setError(`Selling price for variant "${variant.type || 'unnamed'}" must be greater than 0!`);
+                    return false;
+                }
+
+                // Check for empty variant type
+                if (!variant.type.trim()) {
+                    setError('Variant type cannot be empty!')
+                    return false;
+                }
+
+                // Check if selling price is greater than purchase price
+                if (sellingPrice <= purchasePrice) {
+                    setModalState(true);
+                    setModalCntnt(`Selling price for variant "${variant.type}" is not greater than purchase price. Are you sure you want to continue?`);
+                    // Return false here to prevent form submission until user confirms modal
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    };
+
+    const proceedWithSave = async () => {
         try {
             // Create FormData to handle file upload
             const formDataToSend = new FormData();
@@ -210,7 +350,8 @@ export default function AddProduct() {
 
             console.log("Sending product data with file attachment...");
 
-            // // Make API call with FormData
+            // Make API call with FormData
+            setIsLoading(true)
             const response = await axios.post(`${config.baseApi}/product/add-product`, formDataToSend, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
@@ -218,7 +359,7 @@ export default function AddProduct() {
             });
 
             console.log("Product saved successfully:", response.data);
-            alert("Product added successfully!");
+
 
             // Reset form after successful save
             setFormData({
@@ -242,15 +383,74 @@ export default function AddProduct() {
             const fileInput = document.querySelector('input[type="file"]');
             if (fileInput) fileInput.value = '';
 
+            setSuccess('Product added successfully!');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+
         } catch (err) {
             console.error("Error saving product:", err);
-            alert("Error saving product. Please try again.");
+            setError("Error saving product. Please try again.");
         }
     };
 
+    const handleSave = async () => {
+        // Validate form data before saving
+        const isValid = validateFormData();
+
+        // If validation returned false due to modal trigger, wait for modal confirmation
+        if (!isValid && modalState) {
+            // Don't proceed until user confirms via modal
+            return;
+        }
+
+        // If validation failed for other reasons (not modal-related)
+        if (!isValid) {
+            return;
+        }
+
+        // If validation passed without modal, proceed directly
+        proceedWithSave();
+    };
+
     return (
-        <MainCard title="Form Controls">
+        <MainCard title="Add Product">
+            {isLoading &&
+                <LoadingSpinner text="Fetching product details..." />
+            }
+            <ModalCard
+                show={modalState}
+                onClose={() => setModalState(false)}
+                onConfirm={() => {
+                    // When user confirms, close modal and proceed with save
+                    setModalState(false);
+                    // Call save logic directly after confirmation
+                    proceedWithSave();
+                }}
+                message={modalCntnt}
+            />
+
+            {success && (
+                <SessionAlert
+                    type="success"
+                    title='Successful'
+                    message={success}
+                    onClose={() => setSuccess('')}
+                />
+            )}
+
+            {error && (
+                <SessionAlert
+                    type="error"
+                    title='Error'
+                    message={error}
+                    onClose={() => setError('')}
+                />
+
+            )}
+
             <Row>
+
                 <Col lg={12}>
                     <h6 className="text-muted fw-semibold mt-4 mb-2">Product Details</h6>
 
@@ -311,8 +511,8 @@ export default function AddProduct() {
                                                     {/* Show Color column only for size-color variant */}
                                                     {productVariant === "size-color" && <th>Color</th>}
 
-                                                    <th>Purchase Price</th>
-                                                    <th>Selling Price</th>
+                                                    <th>Purchase Price*</th>
+                                                    <th>Selling Price*</th>
                                                     <th>Stock</th>
                                                     <th>Action</th>
                                                 </tr>
@@ -327,6 +527,7 @@ export default function AddProduct() {
                                                                 value={variant.type}
                                                                 onChange={(e) => updateVariantField(variant.id, 'type', e.target.value)}
                                                                 size="sm"
+                                                                required
                                                             />
                                                         </td>
                                                         {productVariant === "size-color" && (
@@ -347,6 +548,9 @@ export default function AddProduct() {
                                                                 value={variant.purchasePrice}
                                                                 onChange={(e) => updateVariantField(variant.id, 'purchasePrice', e.target.value)}
                                                                 size="sm"
+                                                                min="0.01"
+                                                                step="0.01"
+                                                                required
                                                             />
                                                         </td>
                                                         <td>
@@ -356,6 +560,9 @@ export default function AddProduct() {
                                                                 value={variant.sellingPrice}
                                                                 onChange={(e) => updateVariantField(variant.id, 'sellingPrice', e.target.value)}
                                                                 size="sm"
+                                                                min="0.01"
+                                                                step="0.01"
+                                                                required
                                                             />
                                                         </td>
                                                         <td>
@@ -365,6 +572,8 @@ export default function AddProduct() {
                                                                 value={variant.stock}
                                                                 onChange={(e) => updateVariantField(variant.id, 'stock', e.target.value)}
                                                                 size="sm"
+                                                                min="0"
+                                                                step="1"
                                                             />
                                                         </td>
                                                         <td className="text-center">
@@ -377,6 +586,7 @@ export default function AddProduct() {
                                                 ))}
                                             </tbody>
                                         </Table>
+                                        <Form.Text className="text-muted">* Prices must be greater than 0</Form.Text>
                                     </div>
                                 </div>
                             )}
@@ -472,27 +682,36 @@ export default function AddProduct() {
                                                 name="stocks"
                                                 value={formData.stocks}
                                                 onChange={handleInputChange}
+                                                min="0"
+                                                step="1"
                                             />
                                         </Col>
                                         <Col md={6} className="mb-3">
-                                            <Form.Label>Purchase Price</Form.Label>
+                                            <Form.Label>Purchase Price*</Form.Label>
                                             <Form.Control
                                                 type="number"
                                                 placeholder="Enter purchase price"
                                                 name="purchasePrice"
                                                 value={formData.purchasePrice}
                                                 onChange={handleInputChange}
+                                                min="0.01"
+                                                step="0.01"
+                                                required
                                             />
                                         </Col>
                                         <Col md={6} className="mb-3">
-                                            <Form.Label>Selling Price</Form.Label>
+                                            <Form.Label>Selling Price*</Form.Label>
                                             <Form.Control
                                                 type="number"
                                                 placeholder="Enter selling price"
                                                 name="sellingPrice"
                                                 value={formData.sellingPrice}
                                                 onChange={handleInputChange}
+                                                min="0.01"
+                                                step="0.01"
+                                                required
                                             />
+                                            <Form.Text className="text-muted">* Must be greater than 0</Form.Text>
                                         </Col>
                                     </>
                                 )}

@@ -6,6 +6,8 @@ import Loadable from 'components/Loadable';
 import ProductTable from '../views/products/productTable';
 import ViewProduct from '../views/products/viewProduct';
 import EditProduct from '../views/products/editProduct';
+import PerCategoryTable from '../views/products/perProductCategory';
+import Cart from '../views/products/cart';
 
 // render - add products page
 const AddProduct = Loadable(lazy(() => import('views/products/addProducts')));
@@ -48,7 +50,16 @@ const ProductRoutes = {
                 {
                     path: 'edit-product',
                     element: <EditProduct />
+                },
+                {
+                    path: 'per-product-category',
+                    element: <PerCategoryTable />
+                },
+                {
+                    path: 'Cart',
+                    element: <Cart />
                 }
+
             ]
 
         }

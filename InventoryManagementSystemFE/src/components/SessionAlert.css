@@ -1,0 +1,216 @@
+/* SessionAlert.css - Updated for navigation overlap */
+
+/* Alert container for positioning */
+.session-alert-container {
+    position: fixed;
+    z-index: 9999;
+    /* Higher than navigation */
+    pointer-events: none;
+}
+
+/* Adjust top positions to account for navigation height */
+.session-alert-top-right {
+    top: 80px;
+    /* Adjust based on your nav height */
+    right: 20px;
+}
+
+.session-alert-top-left {
+    top: 80px;
+    /* Adjust based on your nav height */
+    left: 20px;
+}
+
+.session-alert-bottom-right {
+    bottom: 20px;
+    right: 20px;
+}
+
+.session-alert-bottom-left {
+    bottom: 20px;
+    left: 20px;
+}
+
+.session-alert-center {
+    top: calc(50% + 40px);
+    /* Adjust based on your nav height */
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+/* Rest of your existing CSS remains the same */
+.session-alert {
+    max-width: 420px;
+    min-width: 320px;
+    background-color: white;
+    border-radius: 12px;
+    border: 1px solid;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    pointer-events: all;
+    animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+    transition: all 0.3s ease;
+    margin-bottom: 12px;
+}
+
+/* ... rest of your CSS ... */
+
+.session-alert.fade-out {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.session-alert-content {
+    display: flex;
+    padding: 18px;
+    gap: 14px;
+}
+
+.session-alert-icon-container {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.session-alert-body {
+    flex: 1;
+    min-width: 0;
+    /* For text overflow */
+}
+
+.session-alert-title {
+    margin: 0 0 6px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.session-alert-message {
+    margin: 0 0 12px 0;
+    color: #4B5563;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.session-alert-action-button {
+    padding: 8px 16px;
+    background-color: #10B981;
+    color: white;
+    border: 1px solid;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.session-alert-action-button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.session-alert-close {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    align-self: flex-start;
+    color: #6B7280;
+}
+
+.session-alert-close:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+/* Progress bar for auto-dismiss */
+.session-alert-progress {
+    height: 4px;
+    width: 100%;
+    background-color: #E5E7EB;
+    overflow: hidden;
+}
+
+.session-alert-progress-bar {
+    height: 100%;
+    width: 100%;
+    background-color: #10B981;
+    animation: progressShrink linear forwards;
+}
+
+@keyframes progressShrink {
+    from {
+        width: 100%;
+    }
+
+    to {
+        width: 0%;
+    }
+}
+
+/* Alert manager for multiple alerts */
+.session-alert-manager {
+    position: fixed;
+    z-index: 1000;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.session-alert-manager .session-alert {
+    pointer-events: all;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .session-alert {
+        min-width: unset;
+        max-width: calc(100vw - 40px);
+    }
+
+    .session-alert-top-right,
+    .session-alert-top-left,
+    .session-alert-bottom-right,
+    .session-alert-bottom-left {
+        right: 20px;
+        left: 20px;
+        max-width: calc(100vw - 40px);
+    }
+
+    .session-alert-center {
+        left: 20px;
+        right: 20px;
+        transform: translateY(-50%);
+        max-width: calc(100vw - 40px);
+    }
+
+    .session-alert-content {
+        padding: 16px;
+    }
+}
